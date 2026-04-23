@@ -2,10 +2,8 @@
 
 Full reference implementation of Hunyuan3D inference on native Apple Silicon, including MLX texturing. 
 
-**Project/docs are a WIP and all contributions are welcome.** Writup on all the optimizations that was done coming soon (i.e. some work trimming down CPU UV Unwrapping, among other kernel stuff)
+**Project/docs are a WIP and all contributions are welcome.** Writeup on all the optimizations that was done coming soon (i.e. some work trimming down CPU UV Unwrapping, among other kernel stuff). This is a continuation of a months long attempt to port Hunyuan3D-Paint to MPS since last December.
 
-
-This is a continuation of a months long attempt to port Hunyuan3D-Paint to MPS, read about my first failed attempt in December [here](https://blog.zimengxiong.com/#post/porting-hunyuan3d-2-texture-generation-to-apple-silicon-mps).
 
 ![](feature.png)
 
