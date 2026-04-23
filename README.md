@@ -202,4 +202,6 @@ uv run python paint/2.0/turbo/convert_mlx.py <path-to-hunyuan3d-paint-v2-0-turbo
 ## Credits
 Derivative work of [Tencent](https://github.com/Tencent-Hunyuan/Hunyuan3D-2), [Lane et. al](https://arxiv.org/abs/2011.03277), and pedronaugusto.
 
-MIT Licensed
+Model and derivative models respect the `TENCENT HUNYUAN 3D 2.0 COMMUNITY LICENSE AGREEMENT`, see [legal](legal/hunyuan/)
+
+All other work is licensed under [MIT](LICENSE).
