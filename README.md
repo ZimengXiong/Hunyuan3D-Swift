@@ -1,21 +1,195 @@
-# Hunyuan3D on M{PS, LX}
-The goal of this project is to port every Hunyuan3D 2.x model to run on Apple Silicon, and eventually, MLX.
+# Hunyuan3D on Apple Silicon (MPS + MLX)
 
-# Current Status
+A streamlined Hunyuan3D workspace focused on:
+- Shape generation (SV + MV)
+- Paint/texturing
+- Apple Silicon support with a practical default: use MLX for paint diffusion
+
+---
+
+## Current status
+
 | Model | Type | MPS | MLX | MLX HF |
 | - | - | - | - | - |
-| hunyuan3d-dit-v2-mini | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-mini-turbo | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-0 | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-0-turbo | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-1 | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-mv | 🧱 | ✅ | ❌ | |
-| hunyuan3d-dit-v2-mv-turbo | 🧱 | ✅ | ❌ | |
-| hunyuan3d-paint-v2-0 | 🎨 | ✅ | ✅ | |
-| hunyuan3d-paint-v2-0-turbo | 🎨 | ✅ | ✅ | |
-| hunyuan3d-paintpbr-v2-1 | 🎨 | ✅ | ✅ | |
+| hunyuan3d-dit-v2-mini | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-mini-turbo | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-0 | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-0-turbo | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-1 | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-mv | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-dit-v2-mv-turbo | 🧱 Shape | ✅ | 🏗️ | |
+| hunyuan3d-paint-v2-0 | 🎨 Paint | ✅ | ✅ | [zimengxiong/Hunyuan3D-2.0-Paint-MLX](https://huggingface.co/zimengxiong/Hunyuan3D-2.0-Paint-MLX) |
+| hunyuan3d-paint-v2-0-turbo | 🎨 Paint | ✅ | ✅ | [zimengxiong/Hunyuan3D-2.0-Paint-MLX](https://huggingface.co/zimengxiong/Hunyuan3D-2.0-Paint-MLX) |
+| hunyuan3d-paintpbr-v2-1 | 🎨 Paint | ✅ | 🏗️ | [zimengxiong/Hunyuan3D-2.1-Paint-MLX](https://huggingface.co/zimengxiong/Hunyuan3D-2.1-Paint-MLX) |
 
-## 2.0 vs 2.0-turbo paint (structure)
-`hunyuan3d-paint-v2-0` and `hunyuan3d-paint-v2-0-turbo` use the same core UNet tensor structure in practice (same key dimensions/config-level shape), which is why the same MLX conversion profile (`paint-2.0`) works for both.
+---
 
-The main runtime difference is mode/scheduler behavior: turbo is run through the turbo path (`hunyuanpaint-turbo`, LCM + turbo mode), while non-turbo uses the standard paint path.
+## Note on MPS
+
+PyTorch/MPS paint can use very high unified memory and may OOM/kill on larger runs, so run paint with `--paint-diffusion-backend mlx`
+
+---
+
+## Setup / install
+
+### 1) Prerequisites
+- macOS on Apple Silicon
+- Python 3.14
+- [uv](https://docs.astral.sh/uv/)
+- Xcode Command Line Tools (`xcrun` available)
+- Hugging Face CLI auth (`hf auth login`)
+
+### 2) Install
+```bash
+cd Hunyuan3D-2
+uv sync
+```
+
+### 3) Smoke check
+```bash
+uv run python main.py --help
+uv run python main.py shape --help
+uv run python main.py paint --help
+```
+
+---
+
+## Benchmarks
+M4 Max 40c
+
+| Task | Time |
+| - |  - |
+| Paint 2.0 (MLX) |  114.3s |
+| Paint 2.0-turbo (MLX) |  62.6s |
+| Paint 2.0 (MPS) | 302.4s |
+| Paint 2.0-turbo (MPS) | 222.1s |
+| Shape mini (MPS) | 86.8s |
+| Shape mini-turbo (MPS) |  253.1s |
+
+Notes:
+- Turbo and non-turbo are different checkpoints, so outputs are not pixel-identical.
+- MLX backend currently accelerates diffusion UNet path; renderer and some stages still use PyTorch components.
+- MLX generally outperforms MPS, use MLX when possible
+---
+
+## Run with `main.py`
+
+<details>
+<summary><strong>Shape</strong></summary>
+
+```bash
+# default demo (penguin)
+uv run python main.py shape
+
+# explicit presets
+uv run python main.py shape --shape-preset mini
+uv run python main.py shape --shape-preset mini-turbo
+uv run python main.py shape --shape-preset 2.0
+uv run python main.py shape --shape-preset 2.0-turbo
+uv run python main.py shape --shape-preset 2.1 --no-shape-safetensors
+
+# multiview from images/mv/1
+uv run python main.py shape --shape-preset mv mv 1
+uv run python main.py shape --shape-preset mv-turbo mv 1
+```
+</details>
+
+<details>
+<summary><strong>Paint (recommended MLX)</strong></summary>
+
+```bash
+# 2.0 MLX (auto-pulls MLX weights from HF if not local)
+uv run python main.py paint \
+  --paint-preset 2.0 \
+  --paint-diffusion-backend mlx \
+  --mesh outputs/demo/demo_shape_mps.glb
+
+# 2.0-turbo MLX (auto-pulls MLX weights from HF if not local)
+uv run python main.py paint \
+  --paint-preset 2.0-turbo \
+  --paint-diffusion-backend mlx \
+  --mesh outputs/demo/demo_shape_mps.glb
+
+# optional explicit local override
+uv run python main.py paint \
+  --paint-preset 2.0-turbo \
+  --paint-diffusion-backend mlx \
+  --paint-mlx-weights converted/Hunyuan3D-2.0-Paint-MLX/2.0-turbo \
+  --mesh outputs/demo/demo_shape_mps.glb
+```
+</details>
+
+<details>
+<summary><strong>Paint (PyTorch/MPS)</strong></summary>
+
+```bash
+uv run python main.py paint --paint-preset 2.0 --mesh outputs/demo/demo_shape_mps.glb
+uv run python main.py paint --paint-preset 2.0-turbo --mesh outputs/demo/demo_shape_mps.glb
+uv run python main.py paint --paint-preset 2.1 --mesh outputs/demo/demo_shape_mps.glb
+```
+</details>
+
+<details>
+<summary><strong>Full pipeline</strong></summary>
+
+```bash
+uv run python main.py full
+uv run python main.py full mv 1
+
+# full with MLX paint backend
+uv run python main.py full \
+  --shape-preset 2.0-turbo \
+  --paint-preset 2.0-turbo \
+  --paint-diffusion-backend mlx
+```
+</details>
+
+---
+
+## Per-model script runners
+
+<details>
+<summary><strong>Shape scripts</strong></summary>
+
+```bash
+uv run python shape/mini/gen.py
+uv run python shape/mini/turbo/gen.py
+uv run python shape/2.0/gen.py
+uv run python shape/2.0/turbo/gen.py
+uv run python shape/2.1/gen.py --no-shape-safetensors
+uv run python shape/mv/gen.py mv 1
+uv run python shape/mv/turbo/gen.py mv 1
+```
+</details>
+
+<details>
+<summary><strong>Paint scripts (MLX)</strong></summary>
+
+```bash
+uv run python paint/2.0/gen_mlx.py --mesh outputs/demo/demo_shape_mps.glb
+uv run python paint/2.0/turbo/gen_mlx.py --mesh outputs/demo/demo_shape_mps.glb
+uv run python paint/2.1/gen_mlx.py --mesh outputs/demo/demo_shape_mps.glb
+```
+</details>
+
+<details>
+<summary><strong>Paint scripts (PyTorch)</strong></summary>
+
+```bash
+uv run python paint/2.0/gen.py --mesh outputs/demo/demo_shape_mps.glb
+uv run python paint/2.0/turbo/gen.py --mesh outputs/demo/demo_shape_mps.glb
+uv run python paint/2.1/gen.py --mesh outputs/demo/demo_shape_mps.glb
+```
+</details>
+
+---
+
+## Optional: convert MLX weights yourself
+
+```bash
+# 2.0
+uv run python paint/2.0/convert_mlx.py <path-to-hunyuan3d-paint-v2-0>
+
+# 2.0-turbo
+uv run python paint/2.0/turbo/convert_mlx.py <path-to-hunyuan3d-paint-v2-0-turbo>
+```

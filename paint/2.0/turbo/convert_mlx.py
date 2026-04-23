@@ -15,7 +15,7 @@ def main():
     parser.add_argument("model_path", help="Path to the model subfolder (contains unet/ and vae/)")
     args = parser.parse_args()
 
-    output_dir = str(ROOT / "converted/Hunyuan3D-2.0-Turbo-Paint-MLX")
+    output_dir = str(ROOT / "converted/Hunyuan3D-2.0-Paint-MLX/2.0-turbo")
 
     print("Converting 2.0 TURBO paint weights to MLX...")
     print(f"Source: {args.model_path}")

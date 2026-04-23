@@ -25,13 +25,23 @@ dependencies = [
   "xatlas",
   "ninja",
   "mlx; platform_system == 'Darwin' and platform_machine == 'arm64'",
+  "mtldiffrast",
+  "mtlbvh",
+  "cumesh",
+  "flex-gemm",
 ]
+
+[tool.uv.sources]
+mtldiffrast = { path = "libraries/mtldiffrast" }
+mtlbvh = { path = "libraries/mtlbvh" }
+cumesh = { path = "libraries/mtlmesh" }
+"flex-gemm" = { path = "libraries/mtlgemm" }
 
 [tool.uv.extra-build-dependencies]
 mtldiffrast = ["torch", "ninja", "setuptools"]
 mtlbvh = ["torch", "ninja", "setuptools"]
-mtlmesh = ["torch", "ninja", "setuptools"]
-mtlgemm = ["torch", "ninja", "setuptools"]
+cumesh = ["torch", "ninja", "setuptools"]
+"flex-gemm" = ["torch", "ninja", "setuptools"]
 
 [tool.uv]
 package = false

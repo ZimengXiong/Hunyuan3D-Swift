@@ -17,17 +17,19 @@ def main():
     parser.add_argument("--mesh", required=True, help="Path to input .obj or .glb")
     parser.add_argument("--image", default=str(ROOT / "images/penguin.png"), help="Path to reference image")
     parser.add_argument("--output", default="output_21_mlx.glb")
+    parser.add_argument(
+        "--mlx-weights",
+        default=None,
+        help="Optional local MLX weights directory (contains unet.npz). If omitted, auto-pulls from Hugging Face.",
+    )
     args = parser.parse_args()
 
-    # Local converted weights
-    mlx_weights = str(ROOT / "converted/Hunyuan3D-2.1-Paint-MLX")
-    
     print(f"Loading 2.1 PBR with MLX backend...")
     painter = Hunyuan3DPaintPipeline.from_pretrained(
         "tencent/Hunyuan3D-2.1",
         subfolder="hunyuan3d-paintpbr-v2-1",
         diffusion_backend="mlx",
-        mlx_weights_path=mlx_weights
+        mlx_weights_path=args.mlx_weights,
     )
 
     mesh = trimesh.load(args.mesh, force="mesh")

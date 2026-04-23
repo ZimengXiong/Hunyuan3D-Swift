@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
 
     # Determine output directory
-    output_dir = str(ROOT / "converted/Hunyuan3D-2.0-Paint-MLX")
+    output_dir = str(ROOT / "converted/Hunyuan3D-2.0-Paint-MLX/2.0")
 
     print("Converting 2.0 (non-turbo) paint weights to MLX...")
     print(f"Source: {args.model_path}")

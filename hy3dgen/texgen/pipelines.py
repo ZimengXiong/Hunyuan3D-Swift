@@ -84,11 +84,21 @@ class Hunyuan3DPaintPipeline:
                 return 'paint-pbr-2.1'
             return 'paint-2.0'
 
-        def _default_mlx_weights_path(multiview_model_path: str, profile: str):
+        def _mlx_hf_source(profile: str, subfolder_name: str):
+            if profile == 'paint-2.0':
+                repo_id = 'zimengxiong/Hunyuan3D-2.0-Paint-MLX'
+                subdir = '2.0-turbo' if 'turbo' in subfolder_name else '2.0'
+            else:
+                repo_id = 'zimengxiong/Hunyuan3D-2.1-Paint-MLX'
+                subdir = None
+            return repo_id, subdir
+
+        def _default_mlx_weights_path(multiview_model_path: str, profile: str, subfolder_name: str):
             parent = os.path.dirname(multiview_model_path)
             if profile == 'paint-2.0':
+                local_subdir = '2.0-turbo' if 'turbo' in subfolder_name else '2.0'
                 candidates = [
-                    os.path.join(parent, 'hunyuan3d-2.0-mlx'),
+                    os.path.join(parent, 'hunyuan3d-2.0-mlx', local_subdir),
                     os.path.join(multiview_model_path, 'mlx_weights'),
                 ]
             else:
@@ -97,9 +107,26 @@ class Hunyuan3DPaintPipeline:
                     os.path.join(multiview_model_path, 'mlx_weights'),
                 ]
             for c in candidates:
-                if os.path.isdir(c):
+                if os.path.exists(os.path.join(c, 'unet.npz')):
                     return c
             return candidates[0]
+
+        def _download_mlx_weights_from_hf(profile: str, subfolder_name: str) -> str:
+            import huggingface_hub
+
+            repo_id, subdir = _mlx_hf_source(profile, subfolder_name)
+            if subdir:
+                snapshot = huggingface_hub.snapshot_download(
+                    repo_id=repo_id,
+                    allow_patterns=[f'{subdir}/*'],
+                )
+                return os.path.join(snapshot, subdir)
+
+            snapshot = huggingface_hub.snapshot_download(
+                repo_id=repo_id,
+                allow_patterns=['*.npz', 'README.md'],
+            )
+            return snapshot
 
         original_model_path = model_path
         delight_model_path = None
@@ -136,7 +163,9 @@ class Hunyuan3DPaintPipeline:
         mlx_profile = _infer_mlx_profile(subfolder)
         resolved_mlx_weights_path = mlx_weights_path
         if diffusion_backend == 'mlx' and resolved_mlx_weights_path is None:
-            resolved_mlx_weights_path = _default_mlx_weights_path(multiview_model_path, mlx_profile)
+            resolved_mlx_weights_path = _default_mlx_weights_path(multiview_model_path, mlx_profile, subfolder)
+            if not os.path.exists(os.path.join(resolved_mlx_weights_path, 'unet.npz')):
+                resolved_mlx_weights_path = _download_mlx_weights_from_hf(mlx_profile, subfolder)
 
         return cls(
             Hunyuan3DTexGenConfig(

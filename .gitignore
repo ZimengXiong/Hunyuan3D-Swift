@@ -3,7 +3,10 @@ converted/
 __pycache__/
 *.py[cod]
 *$py.class
-
+outputs/validation/ 
+outputs/debug/
+outputs/custom/
+outputs/benchmark/
 # C extensions
 *.so
 
