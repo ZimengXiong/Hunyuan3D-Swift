@@ -126,6 +126,7 @@ public final class PaintPipeline {
     /// 2.0 RGB paint: geometry + reference image → unwrapped geometry + baked base-color texture.
     /// Polls `isCancelled` (returns nil if it fires); streams decoded view grids via `onViews`.
     public func paintRGB(mesh: LoadedMesh, imagePath: String, guidance: Float = 2.0,
+                         seed: UInt64 = 0,
                          onProgress: ((String, Float) -> Void)? = nil,
                          isCancelled: () -> Bool = { false },
                          onViews: ((Data) -> Void)? = nil) throws -> PaintResult? {
@@ -153,7 +154,7 @@ public final class PaintPipeline {
 
         let (sig, ts) = uniPCSchedule(steps)
         let sched = UniPCScheduler(sigmas: sig, timesteps: ts)
-        MLXRandom.seed(0)
+        MLXRandom.seed(seed)
         var latents = MLXRandom.normal([1, N, h, h, 4])
         let ced = wrap.prepare(refLat: refLat)
         let neg = zeros(gen.shape)
@@ -199,6 +200,7 @@ public final class PaintPipeline {
     /// `onProgress`. Debug artifacts are written only when `debugPathPrefix` is set (the CLI
     /// passes the output GLB path): `<prefix>.views.png` and `<prefix>.rendercheck.png`.
     public func paintPBR(mesh: LoadedMesh, imagePath: String, guidance: Float = 3.0,
+                         seed: UInt64 = 0,
                          debugPathPrefix: String? = nil,
                          onProgress: ((String, Float) -> Void)? = nil,
                          isCancelled: () -> Bool = { false },
@@ -231,7 +233,7 @@ public final class PaintPipeline {
 
         let (sig, ts) = uniPCSchedule(steps)
         let sched = UniPCScheduler(sigmas: sig, timesteps: ts)
-        MLXRandom.seed(0)
+        MLXRandom.seed(seed)
         var latents = MLXRandom.normal([1, 2, N, h, h, 4])                     // dim 1: [albedo, mr]
         let (ced, dinoTok, rope) = wrap.prepare(refLat: refLat, dinoHidden: dinoHS, posmap: posmap, H: h, nGen: N)
         let dinoZero = zeros(dinoTok.shape)
