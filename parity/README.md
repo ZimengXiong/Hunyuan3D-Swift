@@ -55,20 +55,33 @@ Shape fixtures are namespaced `shape_*` so shape and paint fixtures can share on
 | `dump_dino_fixture.py` | `dino_weights` + `dino_fixture` (`px,out`) | DINOv2-giant cos ≥ 0.9999 |
 | `dump_raster_fixture.py` | `raster_fixture` | face-id 100% · bary ≤ 2e-4 |
 | `dump_render_fixture.py` | `render_fixture` (exact xatlas V/F/uv + control maps) | control maps PSNR ≥ 80 dB |
-| `dump_bake_fixture.py` | `bake_fixture` (+ Python inpaint reference) | bake PSNR ≥ 100 dB |
-| `dump_p20_e2e.py` | `p20_e2e_fixture` (weights + 3-step loop, guidance 3.0) | paint RGB e2e cos ≥ 0.999 |
-| `dump_pbr_e2e_fixture.py` | `pbr_e2e_fixture` (weights + 3-step loop, guidance 3.0) | paint PBR e2e cos ≥ 0.999 |
+| `dump_bake_fixture.py` | `bake_fixture` | bake PSNR ≥ 100 dB |
+| `dump_inpaint_fixture.py` | `inpaint_fixture` (`texture,covered,filled,filled_edt,edt_rows,edt_cols`; needs `bake_fixture` in `FIXTURES_OUT` first) | inpaint bit-exact (see below) |
+| `dump_voxel_fixture.py` | `voxel_fixture` (512² posmap + fp16 voxel indices at grid 64/32/16/8) | PoseRoPE voxel indices exact |
+| `dump_p20_e2e.py` | `p20_e2e_fixture` (weights + 3-step loop; `GUIDANCE` env, default 2.0, recorded in the fixture) | paint RGB e2e cos ≥ 0.999 |
+| `dump_pbr_e2e_fixture.py` | `pbr_e2e_fixture` (weights + 3-step loop; `GUIDANCE` env, default 3.0, recorded in the fixture) | paint PBR e2e cos ≥ 0.999 |
 
-Not yet scripted (tests exist and skip until the files appear):
+Not yet scripted (optional; the panel line self-documents the skip):
 
-- `inpaint_fixture.safetensors` (`texture,covered,filled`) — Python EDT fill + smoothing
-  reference for the inpaint gate.
 - `image_fixture.safetensors` (`ref512`) + `input.png` — optional `prepRGB` diagnostic in the
   `hy3d parity-paint` panel (not a DESIGN gate).
 
-Note: the two e2e loop fixtures bake `guidance = 3.0` into their expected trajectories (the
-value the dumpers used). The *pipeline* defaults are per-model (RGB 2.0 / PBR 3.0); the parity
-replay intentionally matches the fixture, not the pipeline default.
+Guidance: each e2e fixture records the CFG scale it baked as a `guidance` tensor, and the
+Swift replays read it from the fixture (legacy fixtures without the key replay at 3.0). The
+dumper defaults match the pipeline defaults — RGB 2.0, PBR 3.0.
+
+Inpaint status: the Swift implementation is an exact port of both reference stages — scipy's
+Euclidean feature transform (Maurer's algorithm, including its envelope/scan-order
+tie-breaking; the bake-mask fixture exercises ~10k tie texels and gates index-exact) and
+OpenCV's `INPAINT_NS` fast-marching estimator (heap order, fp16/32/64 widths, uint8
+round-half-even). The gate asserts the final texture is bit-identical to Python (`maxabs == 0`)
+— covered texels included (Python's cv2 pass quantizes them to the uint8 grid; Swift
+reproduces that).
+
+PoseRoPE: `PBRWrapper.voxelIndices` replicates numpy's fp16 arithmetic exactly (fp16 cast
+before the `!= 1` validity test, sequential row-major fp16 window accumulation, integer
+count/threshold, per-op fp16 rounding, round-half-even quantize), so the PBR e2e test runs on
+self-computed RoPE tables and additionally asserts they match the Python-dumped ones.
 
 ## Full regeneration, 2×2 model lineup
 
@@ -94,11 +107,12 @@ cd <Hunyuan-3D-Paint-MLX>
 MESH=<some small manifold mesh.glb>              # reference runs used the Hunyuan3D-2.1 case_1 asset
 for s in dump_vae_fixture dump_sched_fixture dump_unet_base_fixture dump_resrgan_fixture \
          dump_dino_fixture dump_raster_fixture dump_p20_e2e dump_pbr_unet_fixture \
-         dump_pbr_e2e_fixture; do
+         dump_pbr_e2e_fixture dump_voxel_fixture; do
   PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/$s.py
 done
 PYTHONPATH=. FIXTURES_OUT=$FIX PARITY_MESH=$MESH uv run python $D/dump_render_fixture.py
 PYTHONPATH=. FIXTURES_OUT=$FIX PARITY_MESH=$MESH uv run python $D/dump_bake_fixture.py
+PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_inpaint_fixture.py   # after bake
 
 # ---- verify on the Swift side ----
 cd /path/to/Hunyuan3D-Swift
@@ -108,4 +122,4 @@ swift run -c release hy3d parity-paint --fixtures $FIX
 ```
 
 Sizes: the e2e/weight-carrying paint fixtures are large (the PBR e2e fixture embeds the full
-UNet, ~7.8 GB); expect ~28 GB for the complete set.
+UNet, ~7.8 GB); expect ~26 GB for the complete set.
