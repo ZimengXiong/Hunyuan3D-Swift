@@ -1,4 +1,9 @@
-"""Dump a full 2.0 (RGB) diffusion loop (small) + weights for the Swift 2.0 gate."""
+"""Dump a full 2.0 (RGB) diffusion loop (small) + weights for the Swift 2.0 gate.
+
+Env: GUIDANCE — CFG scale baked into the expected trajectory (default 2.0, the RGB
+pipeline's shipping value; historical fixtures used 3.0). The value used is recorded
+in the fixture's `guidance` tensor so the Swift replay always matches the bake.
+"""
 import sys, os, json; sys.path.insert(0, ".")
 import numpy as np, mlx.core as mx
 from mlx.utils import tree_flatten
@@ -12,7 +17,8 @@ model = UNet2p5DConditionModel(json.load(open(f"{P20}/unet/config.json")))
 load_torch_weights(model, mx.load(f"{P20}/unet/diffusion_pytorch_model.safetensors"),
                    renames=[("transformer_blocks.0.transformer.", "transformer_blocks.0.")])
 
-B, N, h, STEPS, GUID = 1, 2, 8, 3, 3.0
+B, N, h, STEPS = 1, 2, 8, 3
+GUID = float(os.environ.get("GUIDANCE", "2.0"))
 rng = np.random.RandomState(0)
 def r(*s): return mx.array(rng.randn(*s).astype(np.float32))
 normal_lat, position_lat = r(B, N, h, h, 4), r(B, N, h, h, 4)
@@ -35,6 +41,7 @@ dump = {}
 for k, v in tree_flatten(model.unet.parameters()): dump[f"main::{k}"] = v.astype(mx.float32)
 for k, v in tree_flatten(model.unet_dual.parameters()): dump[f"dual::{k}"] = v.astype(mx.float32)
 dump.update({"normal_lat": normal_lat, "position_lat": position_lat, "ref_lat": ref_lat,
-             "latents0": latents0, "final": latents})
+             "latents0": latents0, "final": latents,
+             "guidance": mx.array(np.array([GUID], np.float32))})
 mx.save_safetensors(f"{FIX}/p20_e2e_fixture.safetensors", dump)
-print("2.0 e2e: final", latents.shape, "std", round(float(latents.std()), 4))
+print("2.0 e2e: final", latents.shape, "std", round(float(latents.std()), 4), "| guid", GUID)

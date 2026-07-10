@@ -11,7 +11,8 @@ PBR = "weights/hunyuan3d-paintpbr-v2-1"
 model = UNet2p5DPBRConditionModel(json.load(open(f"{PBR}/unet/config.json")))
 load_torch_weights(model, mx.load(f"{PBR}/unet/diffusion_pytorch_model.safetensors"))
 
-B, Np, Ng, H, W, STEPS, GUID = 1, 2, 2, 8, 8, 3, 3.0
+B, Np, Ng, H, W, STEPS = 1, 2, 2, 8, 8, 3
+GUID = float(os.environ.get("GUIDANCE", "3.0"))   # PBR pipeline ships 3.0; recorded in the fixture
 rng = np.random.RandomState(0)
 def r(*s): return mx.array(rng.randn(*s).astype(np.float32))
 normal_lat, position_lat = r(B, Ng, H, W, 4), r(B, Ng, H, W, 4)
@@ -41,6 +42,7 @@ for tok,(c,sn) in cond["rope"].items():
 dump["pvox8"]=mx.array(compute_voxel_indices(np.asarray(posmap),8,64).astype(np.int32))
 dump.update({"normal_lat": normal_lat, "position_lat": position_lat, "ref_lat": ref_lat,
              "dino_hs": dino_hs, "posmap": posmap, "latents0": latents0, "final": latents,
+             "guidance": mx.array(np.array([GUID], np.float32)),
              "unipc_sigmas": mx.array(np.asarray(sched.sigmas, np.float32)),
              "unipc_timesteps": mx.array(np.asarray(sched.timesteps, np.int32))})
 FIX = os.environ.get("FIXTURES_OUT", "fixtures"); os.makedirs(FIX, exist_ok=True)
