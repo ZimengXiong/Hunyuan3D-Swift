@@ -36,6 +36,20 @@ for the full upstream notices.
 - Transitively pulls `swift-numerics` (Apache-2.0 with the Runtime Library
   Exception).
 
+## Algorithm ports (reimplemented, not vendored)
+
+`Sources/HunyuanPaintMLX/Inpaint.swift` is a clean-room Swift reimplementation of two
+reference algorithms, written to reproduce their numerics bit-for-bit for parity. No source
+code from either project is copied or distributed here; the provenance is acknowledged for
+attribution:
+
+- **SciPy** — the Euclidean feature transform (`scipy.ndimage.distance_transform_edt`,
+  Maurer's algorithm, including its scan-order tie-breaking) used for nearest-texel hole
+  fill. SciPy is **BSD-3-Clause** (© SciPy developers). <https://scipy.org>
+- **OpenCV** — the Navier-Stokes fast-marching inpainting estimator (`cv2.INPAINT_NS`,
+  Bertalmío et al.) used to smooth the filled region. OpenCV is **Apache-2.0**
+  (© OpenCV team). <https://opencv.org>
+
 ## Model weights (not distributed in this repository)
 
 The `hy3d` CLI and the parity tests load model weights that are **not** part of
