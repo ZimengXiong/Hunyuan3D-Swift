@@ -222,26 +222,23 @@ public final class MeshRender {
         return (texs, covered)
     }
 
-    /// Fill un-painted texels by iterative neighbor diffusion (covers holes; visible texels untouched).
-    public static func inpaint(_ texture: MLXArray, _ mask: MLXArray, iters: Int = 64) -> MLXArray {
-        let T = texture.dim(0)
-        var img = clip(texture, min: 0, max: 1)
-        var filled = mask.reshaped([T, T, 1]).asType(.float32)
-        img = img * filled
-        for _ in 0..<iters {
-            // sum of 4-neighbor values + counts via shifts (zero-padded)
-            func shift(_ a: MLXArray, _ dy: Int, _ dx: Int) -> MLXArray {
-                let py = dy > 0 ? [dy, 0] : [0, -dy], px = dx > 0 ? [dx, 0] : [0, -dx]
-                let p = padded(a, widths: [IntOrPair((py[0], py[1])), IntOrPair((px[0], px[1])), IntOrPair((0, 0))])
-                return p[(dy > 0 ? 0 : -dy)..<(dy > 0 ? T : T - dy), (dx > 0 ? 0 : -dx)..<(dx > 0 ? T : T - dx), 0...]
-            }
-            let nbrSum = shift(img, 1, 0) + shift(img, -1, 0) + shift(img, 0, 1) + shift(img, 0, -1)
-            let cntSum = shift(filled, 1, 0) + shift(filled, -1, 0) + shift(filled, 0, 1) + shift(filled, 0, -1)
-            let canFill = (1 - filled) * (cntSum .> 0).asType(.float32)
-            let avg = nbrSum / clip(cntSum, min: 1, max: Float(4))
-            img = img + canFill * avg
-            filled = clip(filled + canFill, min: 0, max: 1)
-        }
-        return clip(img, min: 0, max: 1)
+    /// Fill un-painted texels; matches the Python reference exactly (see `Inpaint`):
+    /// clip -> scipy-EDT nearest fill -> uint8 round-trip with OpenCV `INPAINT_NS` on the holes.
+    /// Painted texels come back exactly as Python returns them (uint8-quantized by the NS pass).
+    public static func inpaint(_ texture: MLXArray, _ mask: MLXArray) -> MLXArray {
+        let H = texture.dim(0), W = texture.dim(1)
+        let tex = texture.asType(.float32).asArray(Float.self)
+        let covered = mask.reshaped([H * W]).asType(.int32).asArray(Int32.self).map { $0 != 0 }
+        let filled = Inpaint.fill(texture: tex, covered: covered, H: H, W: W)
+        return MLXArray(filled, [H, W, 3])
+    }
+
+    /// Exact scipy `distance_transform_edt(..., return_indices=True)` nearest-covered indices
+    /// (exposed for the parity gate, which asserts index-exact tie-breaking).
+    public static func edtIndices(_ mask: MLXArray) -> (rows: MLXArray, cols: MLXArray) {
+        let H = mask.dim(0), W = mask.dim(1)
+        let covered = mask.reshaped([H * W]).asType(.int32).asArray(Int32.self).map { $0 != 0 }
+        let (r, c) = Inpaint.edtIndices(covered: covered, H: H, W: W)
+        return (MLXArray(r, [H, W]), MLXArray(c, [H, W]))
     }
 }
