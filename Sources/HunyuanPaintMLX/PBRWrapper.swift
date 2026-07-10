@@ -47,23 +47,54 @@ public struct PBRWrapper {
     }
 
     /// compute_discrete_voxel_indice (fp16 window-average downsample + quantize). position [b,n,H,W,3] in [0,1].
+    /// Exact CPU port of the reference numpy fp16 arithmetic: the input is cast to fp16 first
+    /// (so `valid` tests the fp16 values), the window sum accumulates sequentially row-major in
+    /// fp16 (numpy's strided multi-axis reduce), the count/threshold compare in integers, and the
+    /// divide / clip / scale / round(half-even) all round to fp16 per op — voxel indices are
+    /// bit-identical to Python, so the RoPE tables need no injection.
     public static func voxelIndices(_ position: MLXArray, gridRes: Int, voxelRes: Int) -> MLXArray {
-        let p16 = position.asType(.float16)
         let b = position.dim(0), n = position.dim(1), H = position.dim(2), Wd = position.dim(3), c = position.dim(4)
+        precondition(c == 3)
         let gh = H / gridRes, gw = Wd / gridRes
-        let valid = notEqual(position, MLXArray(1)).all(axes: [-1])             // [b,n,H,W]
-        let pos = MLX.where(valid.expandedDimensions(axis: -1), p16, MLXArray(Float16(0)).asType(.float16))
-        let posR = pos.reshaped([b, n, gridRes, gh, gridRes, gw, c]).asType(.float16)
-        let valR = valid.reshaped([b, n, gridRes, gh, gridRes, gw]).asType(.float16)
-        let gridPos = posR.sum(axes: [3, 5]).asType(.float16)                   // [b,n,gr,gr,c]
-        let count = valR.sum(axes: [3, 5])                                       // [b,n,gr,gr]
-        let denom = maximum(count, MLXArray(1)).expandedDimensions(axis: -1).asType(.float16)
-        var gp = (gridPos / denom).asType(.float16)
-        let thres = Float16((gh * gw) / 16)
-        gp = MLX.where((count .< Float(thres)).expandedDimensions(axis: -1), MLXArray(Float16(0)).asType(.float16), gp)
-        gp = clip(gp, min: MLXArray(Float16(0)), max: MLXArray(Float16(1))).asType(.float16)
-        let vox = round((gp * Float16(voxelRes - 1)).asType(.float16)).asType(.int32)
-        return vox.reshaped([b, n * gridRes * gridRes, 3])
+        let thres = (gh * gw) / 16
+        let scale = Float16(voxelRes - 1)
+        let p32 = position.asType(.float32).asArray(Float.self)
+        let p16 = p32.map { Float16($0) }
+        var out = [Int32](repeating: 0, count: b * n * gridRes * gridRes * 3)
+        for bi in 0 ..< b {
+            for ni in 0 ..< n {
+                let imgBase = (bi * n + ni) * H * Wd * 3
+                for g1 in 0 ..< gridRes {
+                    for g2 in 0 ..< gridRes {
+                        var acc: (Float16, Float16, Float16) = (0, 0, 0)
+                        var count = 0
+                        for hh in 0 ..< gh {                       // numpy reduce order: rows then cols
+                            let row = imgBase + ((g1 * gh + hh) * Wd + g2 * gw) * 3
+                            for ww in 0 ..< gw {
+                                let p = row + ww * 3
+                                let x = p16[p], y = p16[p + 1], z = p16[p + 2]
+                                if x != 1, y != 1, z != 1 {        // valid: all channels != 1 (fp16)
+                                    acc.0 += x; acc.1 += y; acc.2 += z
+                                    count += 1
+                                }
+                            }
+                        }
+                        let o = (((bi * n + ni) * gridRes + g1) * gridRes + g2) * 3
+                        if count < thres {
+                            out[o] = 0; out[o + 1] = 0; out[o + 2] = 0
+                        } else {
+                            let denom = Float16(max(count, 1))
+                            @inline(__always) func q(_ s: Float16) -> Int32 {
+                                let gp = min(max(s / denom, 0), 1)
+                                return Int32((gp * scale).rounded(.toNearestOrEven))
+                            }
+                            out[o] = q(acc.0); out[o + 1] = q(acc.1); out[o + 2] = q(acc.2)
+                        }
+                    }
+                }
+            }
+        }
+        return MLXArray(out, [b, n * gridRes * gridRes, 3])
     }
 
     /// rope tables keyed by multiview token count, from pixel position maps.
