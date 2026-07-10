@@ -23,7 +23,7 @@ func cmdPaint(_ args: Args) throws {
     print("paint (\(model)): mesh=\(meshPath) image=\(imagePath) res=\(res) steps=\(steps) tex=\(tex) super-res=\(superRes)")
     switch model {
     case "pbr":
-        try pipe.run(meshPath: meshPath, imagePath: imagePath, outGLB: out, fixturesDir: "")
+        try pipe.run(meshPath: meshPath, imagePath: imagePath, outGLB: out)
         print("paint: wrote \(out)")
     case "rgb":
         let lm = loadMesh(meshPath)

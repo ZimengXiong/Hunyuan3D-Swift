@@ -104,89 +104,22 @@ public final class PaintPipeline {
         return r
     }
 
-    public func run(meshPath: String, imagePath: String, outGLB: String, fixturesDir: String,
+    /// CLI-shaped PBR paint: file paths in, GLB out. Thin shell over `paintPBR` — the pipeline
+    /// core is shared with the app entry point; this only loads the mesh, writes the debug
+    /// texture PNGs next to the output, and serializes the GLB.
+    public func run(meshPath: String, imagePath: String, outGLB: String,
                     guidance: Float = 3.0) throws {
         let t0 = Date()
         func log(_ s: String) { print("[pipeline] \(s)  (\(Int(-t0.timeIntervalSinceNow))s)") }
-
-        // ---- models ----
-        let vae = PaintVAE(W(try Weights.loadTorch("\(weightsRoot)/hunyuan3d-paint-v2-0/vae/diffusion_pytorch_model.safetensors",
-                                               renames: [(".to_out.0.", ".to_out.")])))
-        let (mainW, dualW) = Weights.splitPBR(try Weights.loadTorch("\(weightsRoot)/hunyuan3d-paintpbr-v2-1/unet/diffusion_pytorch_model.safetensors"))
-        let wrap = PBRWrapper(main: mainW, dual: dualW, nPbr: 2)
-        let dino = Dinov2(W(try Weights.loadTorch("\(weightsRoot)/dinov2-giant/model.safetensors")))
-        let srModel: RealESRGAN? = superRes
-            ? RealESRGAN(W((try loadArrays(url: URL(fileURLWithPath: "\(weightsRoot)/realesrgan/rrdbnet_mlx.safetensors"))).mapValues { $0.asType(.float32) }))
-            : nil
-        log("models loaded")
-
-        // ---- mesh + unwrap ----
         let mesh = loadMesh(meshPath)
-        guard let uw = xatlasUnwrap(vertices: mesh.vertices, vertexCount: mesh.vertexCount, faces: mesh.faces, faceCount: mesh.faceCount) else { return }
-        var V = [Float](repeating: 0, count: uw.vertexCount * 3)               // original geometry gathered by vmapping
-        for i in 0..<uw.vertexCount { let o = Int(uw.vmapping[i]) * 3; V[i*3] = mesh.vertices[o]; V[i*3+1] = mesh.vertices[o+1]; V[i*3+2] = mesh.vertices[o+2] }
-        let R = MeshRender(); R.loadMesh(V, uw.indices); R.setUV(uw.uvs, flipV: true)
-        log("unwrap: \(uw.vertexCount) verts \(uw.indices.count/3) faces")
-
-        // ---- control maps + VAE encode + DINO ----
-        let ctrl = zip(elevs, azims).map { R.renderControl($0.0, $0.1, res) }
-        let normals = ctrl.map { $0.0 }, positions = ctrl.map { $0.1 }
-        func enc(_ imgs: [MLXArray]) -> MLXArray { vae.encodeMean(stacked(imgs) * 2 - 1) * sf }
-        let normalLat = enc(normals).expandedDimensions(axis: 0)               // [1,N,h,w,4]
-        let positionLat = enc(positions).expandedDimensions(axis: 0)
-        let refImg = prepRGB(imagePath, res)
-        let refLat = enc([refImg]).expandedDimensions(axis: 0)                  // [1,1,h,w,4]
-        let di = imagenetNorm(prepRGB(imagePath, 518)).expandedDimensions(axis: 0)
-        let dinoHS = dino(di)                                                   // [1,1370,1536]
-        let posmap = stacked(positions).expandedDimensions(axis: 0)            // [1,N,res,res,3]
-        let N = elevs.count, h = res / 8
-        eval(normalLat, positionLat, refLat, dinoHS); log("controls + dino ready")
-
-        // ---- diffusion loop ----
-        let (schedSigmas, schedTs) = uniPCSchedule(steps)
-        let sched = UniPCScheduler(sigmas: schedSigmas, timesteps: schedTs)
-        MLXRandom.seed(0)
-        var latents = MLXRandom.normal([1, 2, N, h, h, 4])
-        let (ced, dinoTok, rope) = wrap.prepare(refLat: refLat, dinoHidden: dinoHS, posmap: posmap, H: h, nGen: N)
-        let dinoZero = zeros(dinoTok.shape)
-        let nb = 1 * 2 * N
-        for (i, t) in sched.timesteps.enumerated() {
-            let tArr = MLXArray(Array(repeating: Float(t), count: nb))
-            let vc = wrap.predict(latents, tArr, normalLat: normalLat, positionLat: positionLat, ced: ced, dino: dinoTok, rope: rope, mvaScale: 1, refScale: 1)
-            let vu = wrap.predict(latents, tArr, normalLat: normalLat, positionLat: positionLat, ced: nil, dino: dinoZero, rope: rope, mvaScale: 1, refScale: 0)
-            latents = sched.step(vu + guidance * (vc - vu), t, latents); eval(latents)
-            log("step \(i+1)/\(steps)")
-        }
-
-        // ---- decode + super-res ----
-        func decode(_ lat: MLXArray) -> [MLXArray] {
-            let d = clip((vae.decode(lat / sf) + 1) / 2, min: 0, max: 1)        // [N,H,W,3]
-            return (0..<N).map { d[$0] }
-        }
-        var alb = decode(latents[0, 0]), mr = decode(latents[0, 1])
-        saveRGB(concatenated(alb, axis: 1), "\(outGLB).views.png")             // debug: decoded albedo views grid
-        if let sr = srModel {
-            func up(_ v: MLXArray) -> MLXArray { clip(sr(v.expandedDimensions(axis: 0))[0], min: 0, max: 1) }
-            alb = alb.map(up); mr = mr.map(up)
-            eval(alb[0]); log("super-res x4 → \(alb[0].dim(0))px")
-        }
-
-        // ---- bake + inpaint ----
-        let (texs, covered) = R.bakeMulti([alb, mr], elevs, azims, textureSize: tex, weights: vw)
-        let texA = MeshRender.inpaint(texs[0], covered), texM = MeshRender.inpaint(texs[1], covered)
-        eval(texA, texM); log("baked")
-        // debug: render the texture back onto the mesh (bypasses GLB) at 3 angles
-        let dbg = [R.renderTextured(0, 20, 420, texA), R.renderTextured(0, 140, 420, texA), R.renderTextured(0, 260, 420, texA)]
-        saveRGB(concatenated(dbg, axis: 1), "\(outGLB).rendercheck.png")
-
-        // ---- export GLB ----
-        let albPNG = "\(outGLB).albedo.png", mrPNG = "\(outGLB).mr.png"
-        saveRGB(texA, albPNG); saveRGB(texM, mrPNG)
-        var uvExport = uw.uvs                                                  // v-flip for the viewer (v-up)
-        for i in 0..<(uvExport.count/2) { uvExport[i*2+1] = 1 - uvExport[i*2+1] }
-        try writeGLB(path: outGLB, vertices: V, faces: uw.indices, uvs: uvExport,
-                     baseColorPNG: try Data(contentsOf: URL(fileURLWithPath: albPNG)),
-                     metallicRoughnessPNG: try Data(contentsOf: URL(fileURLWithPath: mrPNG)))
+        guard let r = try paintPBR(mesh: mesh, imagePath: imagePath, guidance: guidance,
+                                   debugPathPrefix: outGLB,
+                                   onProgress: { s, _ in log(s) }) else { return }
+        // debug: the baked textures next to the GLB (same bytes that get embedded)
+        try r.albedoPNG.write(to: URL(fileURLWithPath: "\(outGLB).albedo.png"))
+        try r.metallicRoughnessPNG.write(to: URL(fileURLWithPath: "\(outGLB).mr.png"))
+        try writeGLB(path: outGLB, vertices: r.vertices, faces: r.faces, uvs: r.uvs,
+                     baseColorPNG: r.albedoPNG, metallicRoughnessPNG: r.metallicRoughnessPNG)
         log("DONE → \(outGLB)")
     }
 

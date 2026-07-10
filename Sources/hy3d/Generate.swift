@@ -47,7 +47,7 @@ func cmdGenerate(_ args: Args) throws {
             .appendingPathComponent("hy3d_shape_\(UUID().uuidString).glb")
         try GLB.write(mesh, to: tmp)
         defer { try? FileManager.default.removeItem(at: tmp) }
-        try pipe.run(meshPath: tmp.path, imagePath: imagePath, outGLB: out, fixturesDir: "")
+        try pipe.run(meshPath: tmp.path, imagePath: imagePath, outGLB: out)
     case "rgb":
         guard let r = try pipe.paintRGB(mesh: flatten(mesh), imagePath: imagePath, onProgress: { s, f in
             print(String(format: "  [%3.0f%%] %@", f * 100, s))
