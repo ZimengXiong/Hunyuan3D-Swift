@@ -4,3 +4,4 @@ fixtures/
 weights/
 *.log
 .DS_Store
+__pycache__/
