@@ -115,7 +115,8 @@ final class PaintParityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Metric.psnr(texs[0], f["tex"]!), 100, "bake texture PSNR")
     }
 
-    // §7: Paint RGB e2e (3-step, fixed UVs) — cos ≥ 0.999 (measured 0.9999997). GUID matches fixture.
+    // §7: Paint RGB e2e (3-step, fixed UVs) — cos ≥ 0.999. Guidance is read from the fixture
+    // (dumped at 2.0, the RGB pipeline's shipping value; legacy fixtures baked 3.0 and lack the key).
     func testPaintRGBe2e() throws {
         let all = (try fx.require("p20_e2e_fixture.safetensors")).mapValues { $0.asType(.float32) }
         var mainW = [String: MLXArray](), dualW = [String: MLXArray]()
@@ -124,7 +125,7 @@ final class PaintParityTests: XCTestCase {
             else if k.hasPrefix("dual::") { dualW[String(k.dropFirst(6))] = v }
         }
         let wrap = Paint20Wrapper(main: W(mainW), dual: W(dualW))
-        let GUID: Float = 3.0
+        let GUID: Float = all["guidance"]?.item(Float.self) ?? 3.0
         let ced = wrap.prepare(refLat: all["ref_lat"]!)
         let (sig, ts) = uniPCSchedule(3)
         let sched = UniPCScheduler(sigmas: sig, timesteps: ts)
@@ -150,14 +151,26 @@ final class PaintParityTests: XCTestCase {
             else if k.hasPrefix("dual::") { dualW[String(k.dropFirst(6))] = v }
         }
         let wrap = PBRWrapper(main: W(mainW), dual: W(dualW), nPbr: 2)
-        let GUID: Float = 3.0
+        let GUID: Float = all["guidance"]?.item(Float.self) ?? 3.0
         var pcos = [Int: MLXArray](), psin = [Int: MLXArray]()
         for (k, v) in all where k.hasPrefix("prope::") {
             let c = k.components(separatedBy: "::"); let tok = Int(c[1])!
             if c[2] == "cos" { pcos[tok] = v } else { psin[tok] = v }
         }
-        var rope = [Int: (MLXArray, MLXArray)]()
-        for (tok, c) in pcos { rope[tok] = (c, psin[tok]!) }
+        var pyRope = [Int: (MLXArray, MLXArray)]()
+        for (tok, c) in pcos { pyRope[tok] = (c, psin[tok]!) }
+        // Self-computed PoseRoPE: the fp16 voxel indices are ported exactly, so the tables no
+        // longer need to be injected from Python — assert they match, then run the loop on them.
+        if let pvox = all["pvox8"] {
+            let vox = PBRWrapper.voxelIndices(all["posmap"]!, gridRes: 8, voxelRes: 64); eval(vox)
+            XCTAssertEqual(Metric.matchFraction(vox, pvox), 1.0, "fp16 voxel indices exact (grid 8)")
+        }
+        let rope = wrap.ropeByTokens(all["posmap"]!, hLat: 8, nGen: 2)
+        for (tok, py) in pyRope {
+            guard let mine = rope[tok] else { XCTFail("missing self-computed RoPE for \(tok) tokens"); continue }
+            XCTAssertLessThanOrEqual(Metric.maxabs(mine.0, py.0), 1e-6, "RoPE cos (\(tok) tokens)")
+            XCTAssertLessThanOrEqual(Metric.maxabs(mine.1, py.1), 1e-6, "RoPE sin (\(tok) tokens)")
+        }
         let (ced, dino, _) = wrap.prepare(refLat: all["ref_lat"]!, dinoHidden: all["dino_hs"]!,
                                           posmap: all["posmap"]!, H: 8, nGen: 2)
         let dinoZero = zeros(dino.shape)
@@ -175,6 +188,18 @@ final class PaintParityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Metric.cosine(latents, all["final"]!), 0.999, "Paint PBR e2e")
     }
 
+    // PoseRoPE fp16 voxel indices — exact vs numpy fp16 reference at the real pipeline levels
+    // (posmap 512x512; grid_res 64/32/16/8, voxel_res 512/256/128/64).
+    // voxel_fixture.safetensors: pos + vox{64,32,16,8} from compute_voxel_indices.
+    func testVoxelIndices() throws {
+        let f = try fx.require("voxel_fixture.safetensors")
+        for (g, vr) in [(64, 512), (32, 256), (16, 128), (8, 64)] {
+            let vox = PBRWrapper.voxelIndices(f["pos"]!, gridRes: g, voxelRes: vr); eval(vox)
+            XCTAssertEqual(Metric.matchFraction(vox, f["vox\(g)"]!), 1.0,
+                           "voxel indices exact (grid \(g), voxel \(vr))")
+        }
+    }
+
     // §7: DINOv2-giant (feeds the PBR path) — cos ≥ 0.9999
     func testDINOv2Giant() throws {
         let dino = Dinov2(try fx.requireW("dino_weights.safetensors"))
@@ -183,12 +208,25 @@ final class PaintParityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Metric.cosine(out, f["out"]!), 0.9999, "DINOv2-giant")
     }
 
-    // §7: Inpaint (new impl) — exact vs Python EDT fill on the hole mask + PSNR gate on smoothing.
-    // inpaint_fixture.safetensors: texture (baked, holey), covered (mask), filled (Python reference).
+    // §7: Inpaint (new impl) — exact vs Python. The Swift implementation ports scipy's
+    // Euclidean feature transform (incl. tie-breaking) and OpenCV's Navier-Stokes inpaint,
+    // so all three stages gate at bit-exact: EDT indices, EDT fill, and the final result.
+    // inpaint_fixture.safetensors: texture, covered, filled (full Python reference),
+    // filled_edt (EDT-only intermediate), edt_rows/edt_cols (scipy feature indices).
     func testInpaint() throws {
         let f = try fx.require("inpaint_fixture.safetensors")
+        // EDT nearest-fill: index-exact (ties included) and value-exact
+        let (er, ec) = MeshRender.edtIndices(f["covered"]!); eval(er, ec)
+        XCTAssertEqual(Metric.matchFraction(er, f["edt_rows"]!), 1.0, "EDT row indices exact")
+        XCTAssertEqual(Metric.matchFraction(ec, f["edt_cols"]!), 1.0, "EDT col indices exact")
+        if let fe = f["filled_edt"] {
+            let clipped = clip(f["texture"]!.asType(.float32), min: 0, max: 1)
+            let flat = clipped.reshaped([-1, 3])
+            let gather = take(flat, (er.asType(.int32) * f["covered"]!.dim(1) + ec.asType(.int32)).reshaped([-1]), axis: 0)
+            XCTAssertEqual(Metric.maxabs(gather.reshaped(fe.shape), fe), 0, "EDT fill bit-exact")
+        }
+        // Full pipeline (EDT + uint8 round-trip + Navier-Stokes): bit-exact vs Python
         let out = MeshRender.inpaint(f["texture"]!, f["covered"]!); eval(out)
-        // Smoothing may differ slightly from Python's Navier-Stokes pass; gate on PSNR.
-        XCTAssertGreaterThanOrEqual(Metric.psnr(out, f["filled"]!), 40, "inpaint PSNR vs Python fill")
+        XCTAssertEqual(Metric.maxabs(out, f["filled"]!), 0, "inpaint bit-exact vs Python")
     }
 }

@@ -86,4 +86,69 @@ func cmdParityShape(_ args: Args) throws {
             print("  DiT (2.0-turbo)   [skipped: pass --weights-turbo <turbo checkpoint dir>]")
         }
     }
+    if fx.exists("shape_sigmas_fixture.safetensors") {
+        let f = try fx.load("shape_sigmas_fixture.safetensors")
+        let fm = Metric.maxabs(Sampler.flowMatchSigmas(f["flowmatch"]!.dim(0)), f["flowmatch"]!)
+        let cs = Metric.maxabs(Sampler.consistencySigmas(f["consistency"]!.dim(0)), f["consistency"]!)
+        print(String(format: "  %-16@ flow-match maxabs %.3e  consistency maxabs %.3e   [maxabs <= 1e-6]",
+                     "Sigmas", fm, cs))
+    }
+    // ---- e2e mesh (fixed cond+noise -> denoise -> octree decode -> marching cubes) vs Python ----
+    func e2e(_ name: String, runFixture: String, meshFixture: String, weights: URL, guidanceEmbed: Bool) throws {
+        guard fx.exists(runFixture), fx.exists(meshFixture) else { return }
+        let f = try fx.load(runFixture)
+        let ref = try fx.load(meshFixture)
+        let (d, v, _) = try loadShapeModels(weights)
+        let pipe = Pipeline(dit: d, vae: v)
+        let lat = pipe.denoise(cond: f["cond"]!, noise: f["noise"]!, sigmas: f["sigmas"]!,
+                               guidance: f["guidance"]?.item(Float.self) ?? 5.0,
+                               guidanceEmbed: guidanceEmbed)
+        eval(lat)
+        let grid = pipe.gridSDFOctree(latents: lat, resolution: 256); eval(grid)
+        let mesh = MarchingCubes.extract(grid: grid, level: 0.0)
+        let cd = chamferBBox(mesh.vertices.map { [$0.x, $0.y, $0.z] },
+                             ref["V"]!.asType(.float32).asArray(Float.self))
+        print(String(format: "  %-16@ %d verts  Chamfer/bbox %.5f   [<= 0.01]", name, mesh.vertices.count, cd))
+    }
+    try e2e("e2e mesh (mini)", runFixture: "shape_run_fixture.safetensors",
+            meshFixture: "shape_mesh_python_mini.safetensors", weights: wURL, guidanceEmbed: false)
+    if let tw = args.str("weights-turbo"), let twURL = resolveShapeWeights(tw) {
+        try e2e("e2e mesh (turbo)", runFixture: "shape_run_fixture_turbo.safetensors",
+                meshFixture: "shape_mesh_python_turbo.safetensors", weights: twURL, guidanceEmbed: true)
+    }
+}
+
+/// Symmetric Chamfer distance / union-bbox diagonal (subsampled; mirrors the XCTest gate).
+func chamferBBox(_ a: [[Float]], _ bFlat: [Float], sample: Int = 1500) -> Float {
+    var b = [[Float]](); b.reserveCapacity(bFlat.count / 3)
+    var i = 0
+    while i + 2 < bFlat.count { b.append([bFlat[i], bFlat[i + 1], bFlat[i + 2]]); i += 3 }
+    func stride(_ v: [[Float]]) -> [[Float]] {
+        guard v.count > sample else { return v }
+        let st = v.count / sample
+        return (0 ..< sample).map { v[$0 * st] }
+    }
+    let sa = stride(a), sb = stride(b)
+    func meanNN(_ from: [[Float]], _ to: [[Float]]) -> Float {
+        var sum: Float = 0
+        for p in from {
+            var best = Float.greatestFiniteMagnitude
+            for q in to {
+                let dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2]
+                let d = dx * dx + dy * dy + dz * dz
+                if d < best { best = d }
+            }
+            sum += best.squareRoot()
+        }
+        return sum / Float(max(from.count, 1))
+    }
+    let cd = 0.5 * (meanNN(sa, sb) + meanNN(sb, sa))
+    var lo: [Float] = [.greatestFiniteMagnitude, .greatestFiniteMagnitude, .greatestFiniteMagnitude]
+    var hi: [Float] = [-.greatestFiniteMagnitude, -.greatestFiniteMagnitude, -.greatestFiniteMagnitude]
+    for p in a + b {
+        for k in 0 ..< 3 { lo[k] = min(lo[k], p[k]); hi[k] = max(hi[k], p[k]) }
+    }
+    let dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2]
+    let diag = (dx * dx + dy * dy + dz * dz).squareRoot()
+    return diag > 0 ? cd / diag : cd
 }

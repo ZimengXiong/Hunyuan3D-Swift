@@ -49,7 +49,7 @@ func cmdParityPaint(_ args: Args) throws {
         "resrgan_fixture.safetensors", "resrgan_weights.safetensors", "raster_fixture.safetensors",
         "render_fixture.safetensors", "bake_fixture.safetensors", "p20_e2e_fixture.safetensors",
         "pbr_e2e_fixture.safetensors", "dino_fixture.safetensors", "dino_weights.safetensors",
-        "image_fixture.safetensors",
+        "image_fixture.safetensors", "inpaint_fixture.safetensors", "voxel_fixture.safetensors",
     ]
     guard fx.anyExists(allFixtures) else {
         print("no fixtures found at \(fx.dir)")
@@ -87,6 +87,28 @@ func cmdParityPaint(_ args: Args) throws {
         let mMatch = (m.asType(.int32) .== f["mask"]!.asType(.int32)).asType(.float32).mean(); eval(mMatch)
         print(String(format: "  Render uv mask match %.6f", mMatch.item(Float.self)))
         report("Render uv_pos  ", texPos, f["tex_pos"]!)
+    }
+
+    // ---- inpaint (EDT nearest-fill + Navier-Stokes; exact port, expect maxabs 0) ----
+    if fx.exists("inpaint_fixture.safetensors") {
+        let f = try fx.load("inpaint_fixture.safetensors")
+        let (er, ec) = MeshRender.edtIndices(f["covered"]!); eval(er, ec)
+        let idxMatch = ((er.asType(.int32) .== f["edt_rows"]!.asType(.int32))
+            .&& (ec.asType(.int32) .== f["edt_cols"]!.asType(.int32))).asType(.float32).mean()
+        eval(idxMatch)
+        print(String(format: "  Inpaint EDT index match %.6f", idxMatch.item(Float.self)))
+        let out = MeshRender.inpaint(f["texture"]!, f["covered"]!); eval(out)
+        report("Inpaint (EDT+NS)", out, f["filled"]!)
+    }
+
+    // ---- PoseRoPE fp16 voxel indices (512x512 posmap, all four pipeline levels) ----
+    if fx.exists("voxel_fixture.safetensors") {
+        let f = try fx.load("voxel_fixture.safetensors")
+        for (g, vr) in [(64, 512), (32, 256), (16, 128), (8, 64)] {
+            let vox = PBRWrapper.voxelIndices(f["pos"]!, gridRes: g, voxelRes: vr)
+            let diff = abs(vox.asType(.int32) - f["vox\(g)"]!.asType(.int32)).max(); eval(diff)
+            print("  Voxel indices (grid \(g), voxel \(vr)): maxdiff \(diff.item(Int32.self))")
+        }
     }
 
     // ---- bake_multi (back-sample gather) ----
@@ -152,20 +174,24 @@ func cmdParityPaint(_ args: Args) throws {
             else if k.hasPrefix("dual::") { dualW[String(k.dropFirst(6))] = v }
         }
         let wrap = PBRWrapper(main: W(mainW), dual: W(dualW), nPbr: 2)
-        let GUID: Float = 3.0                                          // == dump_pbr_e2e_fixture.py
+        let GUID: Float = all["guidance"]?.item(Float.self) ?? 3.0     // recorded by the dumper
         let vtest = PBRWrapper.voxelIndices(all["posmap"]!, gridRes: 8, voxelRes: 64)
         let voxDiff = abs(vtest.asType(.int32) - all["pvox8"]!.asType(.int32)).max()
         eval(voxDiff); print("  e2e: voxel maxdiff vs Python = \(voxDiff.item(Int32.self))")
-        var prope = [Int: (MLXArray, MLXArray)]()
         var pcos = [Int: MLXArray](), psin = [Int: MLXArray]()
         for (k, v) in all where k.hasPrefix("prope::") {
             let c = k.components(separatedBy: "::"); let tok = Int(c[1])!
             if c[2] == "cos" { pcos[tok] = v } else { psin[tok] = v }
         }
-        for (tok, c) in pcos { prope[tok] = (c, psin[tok]!) }
-        let (ced, dino, _) = wrap.prepare(refLat: all["ref_lat"]!, dinoHidden: all["dino_hs"]!,
-                                          posmap: all["posmap"]!, H: 8, nGen: 2)
-        let rope = prope
+        // RoPE is self-computed (fp16 voxel port is exact); print the drift vs the Python tables.
+        let (ced, dino, rope) = wrap.prepare(refLat: all["ref_lat"]!, dinoHidden: all["dino_hs"]!,
+                                             posmap: all["posmap"]!, H: 8, nGen: 2)
+        var ropeErr: Float = 0
+        for (tok, c) in pcos {
+            guard let mine = rope[tok] else { ropeErr = .infinity; continue }
+            ropeErr = max(ropeErr, Metric.maxabs(mine.0, c), Metric.maxabs(mine.1, psin[tok]!))
+        }
+        print(String(format: "  e2e: self-computed RoPE tables maxabs vs Python = %.3e", ropeErr))
         eval(dino)
         let dinoZero = zeros(dino.shape)
         let uts = all["unipc_timesteps"]!.asArray(Int32.self).map(Int.init)
@@ -191,7 +217,7 @@ func cmdParityPaint(_ args: Args) throws {
             else if k.hasPrefix("dual::") { dualW[String(k.dropFirst(6))] = v }
         }
         let wrap = Paint20Wrapper(main: W(mainW), dual: W(dualW))
-        let GUID: Float = 3.0                                          // == dump_p20_e2e.py
+        let GUID: Float = all["guidance"]?.item(Float.self) ?? 3.0     // recorded by the dumper (2.0)
         let ced = wrap.prepare(refLat: all["ref_lat"]!)
         let (sig, ts) = uniPCSchedule(3)
         let sched = UniPCScheduler(sigmas: sig, timesteps: ts)
