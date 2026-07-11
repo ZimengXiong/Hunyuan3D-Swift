@@ -1,0 +1,28 @@
+[project]
+name = "hunyuan3d-shape-mlx"
+version = "0.1.0"
+description = "Fully MLX-native Hunyuan3D image->mesh shape generator (no torch in the inference path)"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=1.21.0",
+    "matplotlib>=3.11.0",
+    "mlx>=0.31.2",
+    "numpy>=2.5.0",
+    "opencv-python>=4.13.0.92",
+    "pillow>=12.2.0",
+    "pyyaml>=6.0.3",
+    "safetensors>=0.8.0",
+    "scikit-image>=0.26.0",
+    "trimesh>=4.12.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "scipy>=1.18.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
