@@ -10,7 +10,7 @@ the repo has two parts:
 
 the swift code is checked against python fixtures. the python ports are checked against the original pytorch code. this port was done by a team of agents (one spawned per pytorch vertical) with access to both an CUDA as well as a MLX compatiable GPU to ensure parity. total run time ~10hrs across a dozen agents.
 
-## why i'm excited
+## this is exciting
 | run | config | wall time | peak memory |
 |---|---|---:|---:|
 | `hy3d shape` (small) | 30-step cfg, octree 256 | 20.9 s | ~5.6 gb |
@@ -20,7 +20,7 @@ the swift code is checked against python fixtures. the python ports are checked 
 | `hy3d generate` (small / rgb) | chained | 240 s | ~25 gb |
 | `hy3d generate` (large / pbr) | chained | 360 s | ~33 gb |
 
-that's hunyuan3D-shape running in FIVE POINT SIX gigabytes of RAM. with a Q8 or Q4, we are easily in mobile territory. now, what would you do with a image to 3d model running on your phone (iPhone 15 onwards)? not sure, but that's really really cool, the first time it has been possible (AFAIK). here's a demo:
+that's hunyuan3D-shape running in FIVE POINT SIX gigabytes of RAM (thanks to MLX). with a Q8 or Q4, we are easily in mobile territory. now, what would you do with a image to 3d model running on your phone (iPhone 15 onwards)? not sure, but that's really really cool, the first time it has been possible (AFAIK). here's a demo:
 
 https://github.com/user-attachments/assets/495de7e8-6c76-4b3f-af37-ffa23e0b0a64
 
