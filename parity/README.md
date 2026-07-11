@@ -9,18 +9,22 @@ Fixtures are **not** checked in (see `.gitignore`) — regenerate them with the 
 
 ## Which venv runs what
 
-The dumpers import the Python MLX ports, so each runs from its own repo root with `uv run`:
+The reference Python MLX ports live in this repo under [`python/shape`](../python/shape) and
+[`python/paint`](../python/paint). Each dumper imports one of those packages (via
+`sys.path.insert(0, ".")`), so it runs from that subtree with `uv run`:
 
-| Scripts | Run from (repo root) | Needs |
+| Scripts | Run from | Needs |
 |---|---|---|
-| `dump_dit_fixture.py`, `dump_swift_fixtures.py`, `python_from_fixture.py` | `Hunyuan3D-Shape-MLX` | `hy3dmlx` package + shape checkpoints under `weights/` |
-| `dump_vae_fixture.py`, `dump_sched_fixture.py`, `dump_unet_base_fixture.py`, `dump_resrgan_fixture.py`, `dump_dino_fixture.py`, `dump_raster_fixture.py`, `dump_render_fixture.py`, `dump_bake_fixture.py`, `dump_pbr_unet_fixture.py`, `dump_pbr_e2e_fixture.py`, `dump_p20_e2e.py` | `Hunyuan-3D-Paint-MLX` | `hy3dpaint_mlx` package + paint weights under `weights/` |
+| `dump_dit_fixture.py`, `dump_swift_fixtures.py`, `python_from_fixture.py` | `python/shape` | `hy3dmlx` package (`uv sync`) + shape checkpoints under `weights/` |
+| `dump_vae_fixture.py`, `dump_sched_fixture.py`, `dump_unet_base_fixture.py`, `dump_resrgan_fixture.py`, `dump_dino_fixture.py`, `dump_raster_fixture.py`, `dump_render_fixture.py`, `dump_bake_fixture.py`, `dump_pbr_unet_fixture.py`, `dump_pbr_e2e_fixture.py`, `dump_p20_e2e.py` | `python/paint` | `hy3dpaint_mlx` package (`uv sync`) + paint weights under `weights/` |
 
-Invocation pattern (shape example):
+Invocation pattern (shape example) — everything is in-repo, so paths are relative to the
+subtree (`../../fixtures` and `../../parity` from `python/shape`):
 
 ```bash
-cd <Hunyuan3D-Shape-MLX>
-PYTHONPATH=. FIXTURES_OUT=/path/to/fixtures uv run python /path/to/Hunyuan3D-Swift/parity/dump_dit_fixture.py
+cd python/shape
+uv sync
+PYTHONPATH=. FIXTURES_OUT=../../fixtures uv run python ../../parity/dump_dit_fixture.py
 ```
 
 ## Environment knobs
@@ -89,12 +93,26 @@ Model slots: **shape-small** = `hunyuan3d-dit-v2-mini`, **shape-large** = `hunyu
 **paint-small** = `hunyuan3d-paint-v2-0` (RGB), **paint-large** = `hunyuan3d-paintpbr-v2-1` (PBR).
 Run everything serially — one MLX job on the machine at a time.
 
-```bash
-FIX=/path/to/Hunyuan3D-Swift/fixtures            # or wherever HY3D_FIXTURES will point
-D=/path/to/Hunyuan3D-Swift/parity
+Everything below runs from within this checkout. `$ROOT` is the repo root; fixtures land in
+`$ROOT/fixtures` (where `HY3D_FIXTURES` points) and the dumpers live in `$ROOT/parity`.
 
-# ---- shape (from the Hunyuan3D-Shape-MLX repo root) ----
-cd <Hunyuan3D-Shape-MLX>
+**Weights first.** The dumpers load real checkpoints from each subtree's `weights/` dir:
+- **shape:** `cd python/shape && uv run python scripts/dl_modelscope.py` (2mini), or
+  `scripts/dl_any.py <repo> <path> <out>` for 2.0 / turbo (see [`python/shape/README.md`](../python/shape/README.md)).
+- **paint:** download the paint checkpoints per [`python/paint/README.md`](../python/paint/README.md)
+  into `python/paint/weights/`.
+- **alternative:** the app-facing MLX bundles on Hugging Face
+  ([`zimengxiong/hunyuan3d-mlx-{shape-small,shape-large,paint-small,paint-large}`](https://huggingface.co/zimengxiong))
+  carry the same converted tensors and can be dropped into `weights/` where the directory
+  layout matches.
+
+```bash
+ROOT=$(pwd)                                      # repo root
+FIX=$ROOT/fixtures                               # where HY3D_FIXTURES points
+D=$ROOT/parity
+
+# ---- shape (from python/shape) ----
+cd $ROOT/python/shape && uv sync
 PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_dit_fixture.py
 PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_swift_fixtures.py
 PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/python_from_fixture.py 256
@@ -102,9 +120,9 @@ SHAPE_VARIANT=turbo PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_dit_fix
 SHAPE_VARIANT=turbo PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_swift_fixtures.py
 SHAPE_VARIANT=turbo PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/python_from_fixture.py 256
 
-# ---- paint (from the Hunyuan-3D-Paint-MLX repo root) ----
-cd <Hunyuan-3D-Paint-MLX>
-MESH=<some small manifold mesh.glb>              # reference runs used the Hunyuan3D-2.1 case_1 asset
+# ---- paint (from python/paint) ----
+cd $ROOT/python/paint && uv sync
+MESH=<some small manifold mesh.glb>              # a shape-port output, or the Hunyuan3D-2.1 case_1 asset
 for s in dump_vae_fixture dump_sched_fixture dump_unet_base_fixture dump_resrgan_fixture \
          dump_dino_fixture dump_raster_fixture dump_p20_e2e dump_pbr_unet_fixture \
          dump_pbr_e2e_fixture dump_voxel_fixture; do
@@ -115,7 +133,7 @@ PYTHONPATH=. FIXTURES_OUT=$FIX PARITY_MESH=$MESH uv run python $D/dump_bake_fixt
 PYTHONPATH=. FIXTURES_OUT=$FIX uv run python $D/dump_inpaint_fixture.py   # after bake
 
 # ---- verify on the Swift side ----
-cd /path/to/Hunyuan3D-Swift
+cd $ROOT
 HY3D_FIXTURES=$FIX swift test
 swift run -c release hy3d parity-shape --fixtures $FIX --weights <mini ckpt dir> --weights-turbo <turbo ckpt dir>
 swift run -c release hy3d parity-paint --fixtures $FIX

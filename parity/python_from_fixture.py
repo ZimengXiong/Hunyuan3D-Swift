@@ -2,7 +2,7 @@
 meshes are directly comparable (gate: Chamfer distance / bbox diagonal). Writes the Python
 reference mesh as both .glb (for viewers) and .safetensors V/F arrays (consumed by the Swift test).
 
-Run from the Hunyuan3D-Shape-MLX repo root, AFTER dump_swift_fixtures.py:
+Run from python/shape (this repo), AFTER dump_swift_fixtures.py:
     PYTHONPATH=. uv run python python_from_fixture.py [R]                       # 2mini
     SHAPE_VARIANT=turbo PYTHONPATH=. uv run python python_from_fixture.py [R]  # 2.0-turbo
 

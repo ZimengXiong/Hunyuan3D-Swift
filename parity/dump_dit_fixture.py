@@ -1,7 +1,7 @@
 """Dump a shape DiT forward (inputs + expected output) to a safetensors fixture
 for the MLX-Swift parity test (gate: DiT forward cosine).
 
-Run from the Hunyuan3D-Shape-MLX repo root:
+Run from python/shape (this repo):
     PYTHONPATH=. uv run python dump_dit_fixture.py                       # 2mini (shape-small)
     SHAPE_VARIANT=turbo PYTHONPATH=. uv run python dump_dit_fixture.py  # 2.0-turbo (shape-large)
 

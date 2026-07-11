@@ -5,7 +5,7 @@
   - shape_run_fixture:    DINO cond (demo image) + fixed initial noise + sigmas, so Swift's
     denoise trajectory matches Python's (MLX RNG differs across bindings)
 
-Run from the Hunyuan3D-Shape-MLX repo root:
+Run from python/shape (this repo):
     PYTHONPATH=. uv run python dump_swift_fixtures.py                       # 2mini (shape-small)
     SHAPE_VARIANT=turbo PYTHONPATH=. uv run python dump_swift_fixtures.py  # 2.0-turbo (shape-large)
 

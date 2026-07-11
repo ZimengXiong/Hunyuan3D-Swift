@@ -4,7 +4,7 @@ RoPE levels used by the PBR pipeline (grid_res [64,32,16,8] / voxel_res [512,256
 
 Keys: pos [1,2,512,512,3] f32; vox64/vox32/vox16/vox8 [1, 2*g*g, 3] i32.
 
-Run from the Hunyuan-3D-Paint-MLX repo root:
+Run from python/paint (this repo):
     PYTHONPATH=. FIXTURES_OUT=/path/to/fixtures uv run python .../dump_voxel_fixture.py
 """
 import sys, os; sys.path.insert(0, ".")

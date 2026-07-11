@@ -9,7 +9,7 @@ Keys:
   filled_edt  [T,T,3] f32  EDT-only intermediate (clip -> out[tuple(idx)]), pre-quantize/NS
   edt_rows/edt_cols [T,T] i32  scipy feature-transform indices (tie-break ground truth)
 
-Run from the Hunyuan-3D-Paint-MLX repo root, AFTER dump_bake_fixture.py:
+Run from python/paint (this repo), AFTER dump_bake_fixture.py:
     PYTHONPATH=. FIXTURES_OUT=/path/to/fixtures uv run python .../dump_inpaint_fixture.py
 """
 import sys, os; sys.path.insert(0, ".")
