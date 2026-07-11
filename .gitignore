@@ -9,3 +9,18 @@ __pycache__/
 # Heavy E2E artifacts (GLBs, full-res renders, logs). Curated README images live
 # in docs/images/ and are committed explicitly.
 docs/e2e/
+
+# Python reference implementations (python/shape, python/paint): environments,
+# caches, multi-GB weights, generated outputs, and oracle build artifacts are all
+# regenerable and stay out of git.
+python/**/.venv*/
+python/**/__pycache__/
+python/**/.pytest_cache/
+python/**/weights/
+python/**/outputs/
+python/**/.parity_dumps/
+python/**/reference/
+# Oracle native build artifacts (rebuild with python/paint/oracle/cr_cpu/build.sh)
+python/**/*.so
+python/**/*.dylib
+python/**/build/

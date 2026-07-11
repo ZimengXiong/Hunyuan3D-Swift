@@ -4,10 +4,10 @@ A native [MLX-Swift](https://github.com/ml-explore/mlx-swift) port of Tencent's
 [Hunyuan3D](https://github.com/Tencent-Hunyuan/Hunyuan3D-2) image-to-3D pipelines, running
 entirely on Apple silicon, pure Swift, no Python, no PyTorch, no CUDA in the path. 
 
-Both libraries are verified against the [Python MLX ports](#parity-measured) by
-threshold-gated parity fixtures. Those Python ports are themselves parity-verified against
-the reference PyTorch/CUDA implementation, so the Swift port sits at the end of a
-double-checked chain back to the original models.
+Both libraries are verified against the [Python MLX reference ports](python/) — vendored in
+this repo under [`python/`](python/) — by threshold-gated parity fixtures. Those Python ports
+are themselves parity-verified against the reference PyTorch/CUDA implementation, so the Swift
+port sits at the end of a double-checked chain back to the original models.
 
 <p align="center">
   <img src="docs/images/paint_pbr_render.png" width="100%" alt="PBR-painted result rendered from three angles">
@@ -15,6 +15,28 @@ double-checked chain back to the original models.
 <p align="center">
   <em>Image → shape → PBR texture, produced end-to-end by <code>hy3d generate</code> on an M4 Max.</em>
 </p>
+
+## Repository layout
+
+This is a monorepo. The **Swift package lives at the root** (so the repo is directly consumable
+as a SwiftPM `url` dependency), with the reference Python implementations and the parity bridge
+alongside it:
+
+```
+Package.swift  Sources/  Tests/   # the Swift package (Hy3DMLX, HunyuanPaintMLX, hy3d CLI)
+python/
+  shape/   # MLX reference impl for shape gen  (hy3dmlx/, scripts/, tests/, PLAN/BENCHMARKS/VERIFICATION)
+  paint/   # MLX reference impl for texture/paint (hy3dpaint_mlx/, oracle/ cr_cpu, tests/, research/)
+parity/    # Python fixture dumpers + the regeneration workflow that bridges Swift ↔ Python
+docs/      # curated result images
+```
+
+The three layers form one **parity chain**: the **Swift** package is gated against the
+**Python MLX** ports in `python/`, which are themselves gated against the original
+**torch/CUDA** reference (via a per-stage oracle, including a torch-free `custom_rasterizer`
+CPU twin under `python/paint/oracle/`). `parity/` holds the dumpers that carry expected tensors
+across each hop. See [`python/shape/README.md`](python/shape/README.md),
+[`python/paint/README.md`](python/paint/README.md), and [`parity/README.md`](parity/README.md).
 
 ## Quick start
 
@@ -157,3 +179,13 @@ Navier-Stokes inpaint) carry their own licenses and attributions — see
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). No model weights are redistributed in
 this repository.
 
+## History
+
+The **current** Python MLX reference implementation lives in-repo under [`python/`](python/) —
+these are the per-stage parity-verified ports the Swift package is gated against, and the ones
+you regenerate fixtures from.
+
+An **earlier, pre-parity** Python MLX pipeline once occupied this repository's root. That
+original is preserved unchanged on the [`legacy-python`](../../tree/legacy-python) branch. It
+predates the parity campaign and is superseded by both the `python/` reference ports and this
+Swift implementation (same models, now parity-verified end-to-end).
