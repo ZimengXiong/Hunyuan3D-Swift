@@ -1,4 +1,5 @@
 # hunyuan3d-swift
+<img width="1200" height="400" alt="image" src="https://github.com/user-attachments/assets/534826fa-0a79-45f0-a5af-8c69a49e1fe9" />
 
 swift and python mlx ports of the hunyuan3d shape and paint pipelines.
 
