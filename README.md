@@ -2,14 +2,7 @@
 
 A native [MLX-Swift](https://github.com/ml-explore/mlx-swift) port of Tencent's
 [Hunyuan3D](https://github.com/Tencent-Hunyuan/Hunyuan3D-2) image-to-3D pipelines, running
-entirely on Apple silicon — pure Swift, no Python, no PyTorch, no CUDA in the path. Two
-libraries and one CLI take a single reference image all the way to a textured GLB on-device:
-
-- **`Hy3DMLX`** — shape generation: DiT flow-matching + ShapeVAE geo-decoder + DINOv2
-  image conditioning + marching cubes.
-- **`HunyuanPaintMLX`** — texture painting: SD2.1 multiview diffusion (RGB and PBR), xatlas
-  UV unwrap, rasterize/bake, EDT + Navier-Stokes inpaint, and RealESRGAN ×4 super-resolution.
-- **`hy3d`** — a CLI that runs either stage or chains them (`image → textured GLB`).
+entirely on Apple silicon, pure Swift, no Python, no PyTorch, no CUDA in the path. 
 
 Both libraries are verified against the [Python MLX ports](#parity-measured) by
 threshold-gated parity fixtures. Those Python ports are themselves parity-verified against
@@ -36,9 +29,6 @@ Requires a recent Swift toolchain (Xcode 16+) on Apple silicon.
 
 ### 2. Download weights
 
-Weights are **not** bundled. Four public Hugging Face repos hold the MLX-converted
-checkpoints — download only the ones you need:
-
 | Repo | Contents |
 |---|---|
 | [`zimengxiong/hunyuan3d-mlx-shape-small`](https://huggingface.co/zimengxiong/hunyuan3d-mlx-shape-small) | shape · `2mini` (0.6B) |
@@ -51,13 +41,6 @@ With the Hugging Face CLI:
 ```bash
 hf download zimengxiong/hunyuan3d-mlx-shape-small --local-dir weights/shape-small
 hf download zimengxiong/hunyuan3d-mlx-paint-large --local-dir weights/paint-large
-```
-
-or, without the CLI, fetch a file directly:
-
-```bash
-curl -L -o weights/shape-small/model.fp16.safetensors \
-  https://huggingface.co/zimengxiong/hunyuan3d-mlx-shape-small/resolve/main/model.fp16.safetensors
 ```
 
 (You can also convert the official Tencent checkpoints yourself; the loaders accept the same
@@ -82,16 +65,16 @@ swift run -c release hy3d paint mesh.glb photo.png -o textured.glb \
 
 ## Models
 
-Full 2×2 lineup. Download sizes are the on-disk footprint; times are measured end-to-end on
+Full 2×2 lineup; times are measured end-to-end on
 an M4 Max (shape at octree 256; paint at 512 render / 15 steps with super-resolution, on an
 undecimated mesh).
 
 | Slot | Checkpoint | Params | Download | Time |
 |---|---|---|---|---|
-| **Shape · Small** | `hunyuan3d-dit-v2-mini` (30-step CFG) | 0.6B | ~3.8 GB | **20.9 s** |
-| **Shape · Large** | `hunyuan3d-dit-v2-0-turbo` (8-step consistency, guidance-embed) | 1.1B | ~4.9 GB | **22.3 s** |
-| **Paint · Small** | `hunyuan3d-paint-v2-0` (SD2.1 UNet, RGB, 2048 atlas) | — | ~3.9 GB | **231 s** |
-| **Paint · Large** | `hunyuan3d-paintpbr-v2-1` (MDA+RA+MA+DINO+PoseRoPE, PBR, 4096 atlas) | — | ~8.7 GB | **344 s** |
+| Shape · Small | `hunyuan3d-dit-v2-mini` (30-step CFG) | 0.6B | ~3.8 GB | 20.9 s |
+| Shape · Large | `hunyuan3d-dit-v2-0-turbo` (8-step consistency, guidance-embed) | 1.1B | ~4.9 GB | 22.3 s |
+| Paint · Small | `hunyuan3d-paint-v2-0` (SD2.1 UNet, RGB, 2048 atlas) | — | ~3.9 GB | 231 s |
+| Paint · Large | `hunyuan3d-paintpbr-v2-1` (MDA+RA+MA+DINO+PoseRoPE, PBR, 4096 atlas) | — | ~8.7 GB | 344 s |
 
 Chained `generate` (shape + paint) measures ~240 s (small/RGB) and ~360 s (large/PBR)
 end-to-end. The six multiview panels the paint stage denoises:
@@ -103,7 +86,7 @@ end-to-end. The six multiview panels the paint stage denoises:
 ## Parity (measured)
 
 Every gate is a Swift XCTest that replays a Python-dumped fixture (deterministic seeds) and
-asserts the **threshold** column; the **measured** column is the actual campaign result with
+asserts the threshold column; the measured column is the actual campaign result with
 fixtures regenerated end-to-end across the full 2×2 lineup.
 
 | Gate | Threshold | Measured |
@@ -137,7 +120,7 @@ on Swift-computed RoPE tables (no injection).
 
 ## Performance
 
-Measured on an M4 Max (`/usr/bin/time -l`, release build, weights resident):
+Measured on an M4 Max
 
 | Run | Config | Wall time | Peak memory |
 |---|---|---|---|
@@ -147,42 +130,6 @@ Measured on an M4 Max (`/usr/bin/time -l`, release build, weights resident):
 | `hy3d paint` (PBR) | 512 render, 15 steps, 4096 atlas, +SR | 344 s | ~39 GB |
 | `hy3d generate` (small / RGB) | chained | 240 s | ~25 GB |
 | `hy3d generate` (large / PBR) | chained | 360 s | ~33 GB |
-
-## Architecture
-
-```
-Sources/
-  Hy3DMLX/                 # shape library
-    DiT.swift              #   flow-matching transformer (CFG + guidance-embed variants)
-    DINOv2.swift           #   image conditioning encoder
-    VAE.swift              #   ShapeVAE + geo-decoder (config-driven scale_factor)
-    Sampler.swift          #   flow-match / consistency sigmas
-    MarchingCubes.swift    #   octree grid -> mesh (+ MCTables)
-    Preprocess.swift       #   image -> conditioning
-    ShapeGenerator.swift   #   end-to-end shape pipeline
-    Pipeline.swift, Layers.swift, GLB.swift, Version.swift
-  HunyuanPaintMLX/         # paint library
-    UNet.swift             #   SD2.1 multiview UNet
-    PBRAttention.swift     #   MDA + reference/multiview attention, PoseRoPE
-    PBRWrapper.swift       #   PBR model wiring (self-computed voxel RoPE tables)
-    Wrapper20.swift        #   RGB (v2-0) model wiring
-    Dinov2.swift           #   PBR image conditioning
-    Scheduler.swift        #   DDIM / UniPC
-    VAE.swift              #   SD2.1 VAE
-    Xatlas.swift           #   UV unwrap (via CXatlas)
-    SwiftRaster.swift, MeshRender.swift   # rasterize + control maps
-    Inpaint.swift          #   EDT nearest-fill + Navier-Stokes
-    RealESRGAN.swift       #   ×4 super-resolution
-    Pipeline.swift, MeshIO.swift, ImageX.swift, Layers2D.swift, Attention.swift, GLB.swift
-  CXatlas/                 # vendored xatlas (C++) + thin C shim
-  hy3d/                    # CLI
-    Shape.swift, Paint.swift, Generate.swift   # subcommands
-    Support.swift, main.swift                  # arg parsing, parity-shape / parity-paint panels
-Tests/
-  ShapeParityTests/        # threshold-gated, fixture-driven (XCTSkip when fixtures absent)
-  PaintParityTests/
-parity/                    # Python fixture dumpers + regeneration docs
-```
 
 ## Testing & fixtures
 
@@ -204,14 +151,9 @@ swift run -c release hy3d parity-paint --fixtures ./fixtures
 
 ## License
 
-`Hunyuan3D-Swift` source is **MIT** (see [`LICENSE`](LICENSE)). Vendored xatlas, the
+`Hunyuan3D-Swift` source is MIT (see [`LICENSE`](LICENSE)). Vendored xatlas, the
 `mlx-swift` dependency, the model weights, and the algorithm ports (scipy EDT, OpenCV
 Navier-Stokes inpaint) carry their own licenses and attributions — see
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). No model weights are redistributed in
 this repository.
 
-## History
-
-This repository previously hosted the Python MLX pipeline for Hunyuan3D. That code is
-preserved unchanged on the [`legacy-python`](../../tree/legacy-python) branch; this Swift
-implementation supersedes it (same models, parity-verified against the Python port).
