@@ -3,8 +3,6 @@
 This repository vendors or depends on the following third-party components. The
 `Hunyuan3D-Swift` source code itself is MIT-licensed (see `LICENSE`).
 
-## Vendored source
-
 ### xatlas
 - Location: `Sources/CXatlas/` (`xatlas.cpp`, `xatlas.h`) with a thin C shim.
 - Upstream: <https://github.com/jpcy/xatlas>
@@ -35,32 +33,3 @@ for the full upstream notices.
 - License: **MIT** (Copyright © 2023–2024 Apple Inc.)
 - Transitively pulls `swift-numerics` (Apache-2.0 with the Runtime Library
   Exception).
-
-## Algorithm ports (reimplemented, not vendored)
-
-`Sources/HunyuanPaintMLX/Inpaint.swift` is a clean-room Swift reimplementation of two
-reference algorithms, written to reproduce their numerics bit-for-bit for parity. No source
-code from either project is copied or distributed here; the provenance is acknowledged for
-attribution:
-
-- **SciPy** — the Euclidean feature transform (`scipy.ndimage.distance_transform_edt`,
-  Maurer's algorithm, including its scan-order tie-breaking) used for nearest-texel hole
-  fill. SciPy is **BSD-3-Clause** (© SciPy developers). <https://scipy.org>
-- **OpenCV** — the Navier-Stokes fast-marching inpainting estimator (`cv2.INPAINT_NS`,
-  Bertalmío et al.) used to smooth the filled region. OpenCV is **Apache-2.0**
-  (© OpenCV team). <https://opencv.org>
-
-## Model weights (not distributed in this repository)
-
-The `hy3d` CLI and the parity tests load model weights that are **not** part of
-this repository and carry their own licenses. When you download them you accept:
-
-- **Hunyuan3D-2 / 2mini / 2.1 shape + paint checkpoints** — released by Tencent
-  under the **Tencent Hunyuan3D Community License**. Review the license before
-  redistribution or commercial use.
-- **DINOv2** (giant image encoder used by the PBR paint model) — **Apache-2.0**
-  (Meta Platforms, Inc.).
-- **Real-ESRGAN** (RRDBNet ×4 super-resolution) — **BSD-3-Clause**
-  (Xintao Wang et al.).
-
-No model weights are redistributed here; the repository ships only code.
