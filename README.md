@@ -209,3 +209,9 @@ swift run -c release hy3d parity-paint --fixtures ./fixtures
 Navier-Stokes inpaint) carry their own licenses and attributions — see
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). No model weights are redistributed in
 this repository.
+
+## History
+
+This repository previously hosted the Python MLX pipeline for Hunyuan3D. That code is
+preserved unchanged on the [`legacy-python`](../../tree/legacy-python) branch; this Swift
+implementation supersedes it (same models, parity-verified against the Python port).
