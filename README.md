@@ -8,7 +8,7 @@ the repo has two parts:
 - swift package at the root
 - python-mlx ports under `python/`
 
-the swift code is checked against python fixtures. the python ports are checked against the original pytorch code. this port was done by a team of agents (one spawned per pytorch vertical) with access to both an CUDA as well as a MLX compatiable GPU to ensure parity. total run time ~10hrs across a dozen agents.
+the swift code is checked against python fixtures. the python ports are checked against the original pytorch code.
 
 ## this is exciting
 | run | config | wall time | peak memory |
