@@ -20,9 +20,12 @@ the swift code is checked against python fixtures. the python ports are checked 
 | `hy3d generate` (small / rgb) | chained | 240 s | ~25 gb |
 | `hy3d generate` (large / pbr) | chained | 360 s | ~33 gb |
 
-that's hunyuan3D-shape running in FIVE POINT SIX gigabytes of RAM (thanks to MLX). with a Q8 or Q4, we are easily in mobile territory. now, what would you do with a image to 3d model running on your phone (iPhone 15 onwards)? not sure, but that's really really cool, the first time it has been possible (AFAIK). here's a demo:
+that's hunyuan3D-shape running in FIVE POINT SIX gigabytes of RAM (thanks to MLX). with a Q8 or Q4, we are easily in mobile territory. now, what would you do with a image to 3d model running on your phone (iPhone 15 onwards)? not sure, but that's really really cool, the first time it has been possible (AFAIK). here's some demos (checkout [Modelr](https://github.com/ZimengXiong/Modelr):
 
 https://github.com/user-attachments/assets/495de7e8-6c76-4b3f-af37-ffa23e0b0a64
+
+https://github.com/user-attachments/assets/7c1f5008-8a68-4e08-b3f6-80864d3c1a00
+
 
 ## package
 
